@@ -1,5 +1,4 @@
 import copy
-import random
 import heapq
 from collections import deque
 from typing import Optional
@@ -169,19 +168,17 @@ class Scheduler:
         print_result(finished_jobs, "LLF")
 
 
-def generate_jobs(num: int = 50) -> list[JCB]:
+def read_jobs() -> list[JCB]:
     job_list = []
-    cur_sub_time = 0
-    for i in range(1, num + 1):
-        cur_sub_time += random.randint(0, 4)
-        runtime = random.randint(1, 20)
-        deadline = cur_sub_time + runtime + random.randint(2, 10)
-        job_list.append(JCB(f"P{i}", cur_sub_time, runtime, deadline))
-        
+    with open("JobFile.txt", "r") as f:
+        lines = f.readlines()
+        for line in lines:
+            name, sub_time, run_time, deadline = line.split()
+            job_list.append(JCB(name, int(sub_time), int(run_time), int(deadline)))
     return job_list
 
 if __name__ == "__main__":
-    job_list = generate_jobs()
+    job_list = read_jobs()
     scheduler = Scheduler(job_list)
     scheduler.first_come_first_served()
     scheduler.highest_response_next()
