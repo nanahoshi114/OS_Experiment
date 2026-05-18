@@ -111,7 +111,7 @@ class Scheduler:
                 current_job = None
                 slice_executed = 0
             
-            if not current_job:
+            if current_job is None:
                 if q1:
                     current_job, current_q_level = q1.popleft(), 1
                 elif q2:
@@ -120,7 +120,7 @@ class Scheduler:
                     current_job, current_q_level = q3.popleft(), 3
                 slice_executed = 0
             
-            if current_job:
+            if current_job is not None:
                 if current_job.start_time == -1:
                     current_job.start_time = current_time
                 current_job.remaining_time -= 1
