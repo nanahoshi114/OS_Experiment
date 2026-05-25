@@ -1,10 +1,8 @@
 import copy
-import heapq
 from collections import deque
-from typing import Optional
 
 class JCB:
-    def __init__(self, name: str, submit_time: int, burst_time: int, deadline: int = 0):
+    def __init__(self, name: str, submit_time: int, burst_time: int):
         self.name = name
         self.submit_time = submit_time
         self.burst_time = burst_time
@@ -13,15 +11,11 @@ class JCB:
         self.turnaround_time = 0
         self.weighted_turnaround = 0.0
         self.status = 'W'
-        self.deadline = deadline
         self.remaining_time = burst_time
     def settle_job(self, finish_time: int):
         self.finish_time = finish_time
         self.turnaround_time = finish_time - self.submit_time
         self.weighted_turnaround = self.turnaround_time / self.burst_time
-
-    def __lt__(self, other):
-        return self.deadline - self.remaining_time < other.deadline - other.remaining_time
 
 def calculate_average(jobs: list[JCB]) -> tuple[float, float]:
     avg_turnaround = sum(job.turnaround_time for job in jobs) / len(jobs)
@@ -88,93 +82,60 @@ class Scheduler:
             pending_jobs.remove(selected_job)
         print_result(finished_job, "hrn")
 
-    def multileved_feedback_queue(self):
-        pending_jobs = deque(sorted(self.reset_jobs(), key=lambda x: x.submit_time))
-
-        q1, q2, q3 = deque(), deque(), deque()
-        MAX_SLICE = {1: 1, 2: 2, 3: 4}
-        finished_job = []
-        current_time = 0
-        current_job: Optional[JCB] = None
-        current_q_level = 0
-        slice_executed = 0
-        while pending_jobs or q1 or q2 or q3 or current_job:
-            while pending_jobs and pending_jobs[0].submit_time <= current_time:
-                q1.append(pending_jobs.popleft())
-
-            if current_job and current_q_level > 1 and q1:
-                if current_q_level == 2:
-                    q2.append(current_job)
-                elif current_q_level == 3:
-                    q3.append(current_job)
-                current_job = None
-                slice_executed = 0
-            
-            if current_job is None:
-                if q1:
-                    current_job, current_q_level = q1.popleft(), 1
-                elif q2:
-                    current_job, current_q_level = q2.popleft(), 2
-                elif q3:
-                    current_job, current_q_level = q3.popleft(), 3
-                slice_executed = 0
-            
-            if current_job is not None:
-                if current_job.start_time == -1:
-                    current_job.start_time = current_time
-                current_job.remaining_time -= 1
-                current_time += 1
-                slice_executed += 1
-                if current_job.remaining_time == 0:
-                    current_job.settle_job(current_time)
-                    finished_job.append(current_job)
-                    current_job = None
-                    slice_executed = 0
-                else:
-                    max_slice = MAX_SLICE[current_q_level]
-                    if slice_executed >= max_slice:
-                        if current_q_level == 1:
-                            q2.append(current_job)
-                        elif current_q_level == 2 or current_q_level == 3:
-                            q3.append(current_job)
-                        current_job = None
-                        slice_executed = 0
+    def multilevel_queue(self):
+        """多级队列：按运行时间分入不同队列，高优先级队列全部完成后才调度低优先级队列，队列内 FCFS。"""
+        temp_jobs = sorted(self.reset_jobs(), key=lambda x: x.submit_time)
+        q1, q2, q3 = [], [], []
+        for job in temp_jobs:
+            if job.burst_time <= 5:
+                q1.append(job)
+            elif job.burst_time <= 12:
+                q2.append(job)
             else:
-                current_time += 1
-        print_result(finished_job, "MFQ")
-    
-    def least_laxity_first(self):
-        pending_jobs = deque(sorted(self.reset_jobs(), key=lambda x: x.submit_time))
-        active_jobs: list[JCB] = []
-        finished_jobs = []
-        current_time = 0
-        
-        while pending_jobs or active_jobs:
-            while pending_jobs and pending_jobs[0].submit_time <= current_time:
-                heapq.heappush(active_jobs, pending_jobs.popleft())
-            if not active_jobs:
-                current_time = pending_jobs[0].submit_time
+                q3.append(job)
+        finished_jobs: list[JCB] = []
+        self.current_time = 0
+        for queue in (q1, q2, q3):
+            for job in sorted(queue, key=lambda x: x.submit_time):
+                if self.current_time < job.submit_time:
+                    self.current_time = job.submit_time
+                job.start_time = self.current_time
+                job.status = 'R'
+                job.settle_job(self.current_time + job.burst_time)
+                job.status = 'F'
+                self.current_time = job.finish_time
+                finished_jobs.append(job)
+        print_result(finished_jobs, "多级队列")
+
+    def priority_scheduling(self):
+        """优先级调度：优先数越大越先运行（短作业赋予更高优先数）。"""
+        pending_jobs = self.reset_jobs()
+        finished_jobs: list[JCB] = []
+        self.current_time = 0
+        while pending_jobs:
+            available = [j for j in pending_jobs if j.submit_time <= self.current_time]
+            if not available:
+                self.current_time = min(j.submit_time for j in pending_jobs)
                 continue
-            current_job = heapq.heappop(active_jobs)
-            if current_job.start_time == -1:
-                current_job.start_time = current_time
-            current_job.remaining_time -= 1
-            current_time += 1
-            if current_job.remaining_time == 0:
-                current_job.settle_job(current_time)
-                finished_jobs.append(current_job)
-            else:
-                heapq.heappush(active_jobs, current_job)
-        print_result(finished_jobs, "LLF")
+            selected = max(available, key=lambda x: 21 - x.burst_time)
+            if self.current_time < selected.submit_time:
+                self.current_time = selected.submit_time
+            selected.start_time = self.current_time
+            selected.status = 'R'
+            selected.settle_job(self.current_time + selected.burst_time)
+            selected.status = 'F'
+            self.current_time = selected.finish_time
+            finished_jobs.append(selected)
+            pending_jobs.remove(selected)
+        print_result(finished_jobs, "优先级")
 
 
 def read_jobs() -> list[JCB]:
     job_list = []
     with open("JobFile.txt", "r") as f:
-        lines = f.readlines()
-        for line in lines:
-            name, sub_time, run_time, deadline = line.split()
-            job_list.append(JCB(name, int(sub_time), int(run_time), int(deadline)))
+        for line in f:
+            name, sub_time, run_time = line.split()
+            job_list.append(JCB(name, int(sub_time), int(run_time)))
     return job_list
 
 if __name__ == "__main__":
@@ -182,5 +143,5 @@ if __name__ == "__main__":
     scheduler = Scheduler(job_list)
     scheduler.first_come_first_served()
     scheduler.highest_response_next()
-    scheduler.multileved_feedback_queue()
-    scheduler.least_laxity_first()
+    scheduler.multilevel_queue()
+    scheduler.priority_scheduling()
